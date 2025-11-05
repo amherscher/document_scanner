@@ -1,0 +1,77 @@
+### FILE: /opt/scanner/templates/index.html
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pi Scanner</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 2rem; }
+h2 { margin-top: 0; }
+.row { display: flex; gap: 1rem; flex-wrap: wrap; }
+button { font-size: 1.3rem; padding: 1rem 1.2rem; border-radius: 12px; border: 1px solid #ccc; }
+#recent a { display:block; margin: .2rem 0; }
+input[type=text]{ font-size:1rem; padding:.5rem; width: 22rem; }
+small{ color:#666; }
+</style>
+</head>
+<body>
+<h2>📄 Pi Scanner</h2>
+<div class="row">
+<button onclick="doScan()">Scan</button>
+<button onclick="toggleLED()">LED Toggle</button>
+</div>
+<p>
+Work folder: <span id="workdir"></span>
+<br/><small>Tip: Add this page to your phone/iPad home screen.</small>
+</p>
+<div style="margin:.5rem 0;">
+<input id="newdir" type="text" placeholder="/home/pi/Scans" />
+<button onclick="setDir()">Choose Folder…</button>
+</div>
+<h3>Recent files</h3>
+<div id="recent"></div>
+
+
+<script>
+const TOKEN = "{{ token or '' }}";
+function authHeaders(){
+const h = {}; if (TOKEN) h["X-Auth"] = TOKEN; return h;
+}
+async function refresh(){
+const r = await fetch('/api/status', {headers: authHeaders()});
+const j = await r.json();
+if(!j.ok){ alert(j.error||'status error'); return; }
+document.getElementById('workdir').textContent = j.workdir;
+const div = document.getElementById('recent');
+div.innerHTML = '';
+j.recent.forEach(f=>{
+const a = document.createElement('a');
+a.href = '/downloads/' + encodeURIComponent(f);
+a.textContent = f;
+div.appendChild(a);
+});
+}
+async function doScan(){
+const r = await fetch('/api/scan', {method:'POST', headers: authHeaders()});
+const j = await r.json();
+if(!j.ok){ alert(j.error||'scan error'); return; }
+alert('Saved: ' + j.saved.join(', '));
+refresh();
+}
+async function toggleLED(){
+const r = await fetch('/api/led/toggle', {method:'POST', headers: authHeaders()});
+const j = await r.json();
+if(!j.ok){ alert(j.error||'led error'); return; }
+}
+async function setDir(){
+const path = document.getElementById('newdir').value.trim();
+if(!path) return;
+const r = await fetch('/api/set_workdir', {method:'POST', headers: { 'Content-Type': 'application/json', ...authHeaders()}, body: JSON.stringify({path})});
+const j = await r.json();
+if(!j.ok){ alert(j.error||'set dir error'); return; }
+refresh();
+}
+refresh();
+</script>
+</body>
+</html>

@@ -58,13 +58,13 @@ def scan():
     if not require_auth(request):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
     
-    # Get zoom level from request (default 0.7 for zoomed out)
-    zoom = 0.7
+    # Get zoom level from request (default 0.3 for maximum zoomed out)
+    zoom = 0.3
     try:
         data = request.get_json(force=True, silent=True) or {}
-        zoom = float(data.get("zoom", 0.7))
-        # Clamp zoom between 0.3 and 2.0
-        zoom = max(0.3, min(2.0, zoom))
+        zoom = float(data.get("zoom", 0.3))
+        # Clamp zoom between 0.2 and 2.0
+        zoom = max(0.2, min(2.0, zoom))
     except (ValueError, TypeError):
         pass  # Use default
     

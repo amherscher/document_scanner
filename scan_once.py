@@ -205,7 +205,7 @@ parser.add_argument("--device", default="/dev/video0")
 parser.add_argument("--resolution", default="1920x1080")
 parser.add_argument("--rotate", default="auto")  # auto|0|90|180|270
 parser.add_argument("--camera-type", default="auto")  # auto|csi|usb
-parser.add_argument("--zoom", type=float, default=0.7)  # 1.0 = normal, < 1.0 = zoom out (show more), > 1.0 = zoom in
+parser.add_argument("--zoom", type=float, default=0.3)  # 1.0 = normal, < 1.0 = zoom out (show more), > 1.0 = zoom in
 args = parser.parse_args()
 
 

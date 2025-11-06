@@ -77,10 +77,19 @@ def led_toggle():
     if not require_auth(request):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
     try:
-        subprocess.run(["/usr/bin/python3", str(APP_ROOT / "led_toggle.py")], check=True)
+        # Pass environment variables to the LED toggle script
+        env = os.environ.copy()
+        subprocess.run(
+            ["/usr/bin/python3", str(APP_ROOT / "led_toggle.py")],
+            check=True,
+            env=env,
+            capture_output=True,
+            text=True
+        )
         return jsonify({"ok": True})
     except subprocess.CalledProcessError as e:
-        return jsonify({"ok": False, "error": str(e)})
+        error_msg = e.stderr.strip() if e.stderr else str(e)
+        return jsonify({"ok": False, "error": error_msg})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 

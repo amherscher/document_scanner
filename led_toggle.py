@@ -2,25 +2,21 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import re
 from pathlib import Path
 
 
 """
-USB LED toggle for Raspberry Pi document scanner.
-
-Supports multiple control methods:
-1. USB hub port control (uhubctl) - for USB hubs with per-port power switching
-2. Serial USB device - for USB devices that appear as serial ports
-3. GPIO control - fallback for GPIO-connected LEDs
+USB LED toggle - Simply disable/enable USB port power to turn LED off/on.
 
 Configuration via environment variables:
-- METHOD: "uhubctl", "serial", "gpio", or "auto" (default: auto - tries all)
-- HUB: USB hub location for uhubctl (e.g., "1-1")
-- PORT: USB port number for uhubctl (e.g., "2")
-- SERIAL_DEVICE: Serial device path (e.g., "/dev/ttyUSB0" or "/dev/ttyACM0")
-- GPIO_PIN: GPIO pin number (BCM numbering, e.g., "18")
-- SERIAL_COMMAND_ON: Command bytes to send to turn LED on (hex, e.g., "FF")
-- SERIAL_COMMAND_OFF: Command bytes to send to turn LED off (hex, e.g., "00")
+- HUB: USB hub location (e.g., "1-1") - find with: sudo uhubctl
+- PORT: USB port number (e.g., "2") - find with: sudo uhubctl
+
+Usage:
+  export HUB="1-1"
+  export PORT="2"
+  python3 led_toggle.py
 """
 
 
@@ -38,137 +34,124 @@ def check_command(cmd: str) -> bool:
         return False
 
 
-def toggle_uhubctl(hub: str, port: str) -> bool:
-    """Toggle LED using uhubctl (USB hub port power control)."""
+def get_usb_port_state(hub: str, port: str) -> bool | None:
+    """Get current USB port power state. Returns True if on, False if off, None if error."""
     if not check_command("uhubctl"):
-        return False
+        return None
     
     try:
-        # Toggle: off then on (creates a visible blink/toggle effect)
-        # First get current state or just toggle
-        result_off = subprocess.run(
-            ["sudo", "uhubctl", "-l", hub, "-p", port, "-a", "0"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+        result = subprocess.run(
+            ["sudo", "uhubctl", "-l", hub],
+            capture_output=True,
+            text=True,
             check=False
         )
-        if result_off.returncode != 0:
+        if result.returncode != 0:
+            return None
+        
+        # Parse output to find port state
+        # Look for line like: "Port 2: 0000 off  power"
+        pattern = rf"Port {port}:\s+\d+\s+(on|off)"
+        match = re.search(pattern, result.stdout)
+        if match:
+            return match.group(1) == "on"
+        return None
+    except Exception as e:
+        print(f"Error reading port state: {e}", file=sys.stderr)
+        return None
+
+
+def set_usb_port_power(hub: str, port: str, state: bool) -> bool:
+    """Set USB port power state. Returns True if successful."""
+    if not check_command("uhubctl"):
+        print("uhubctl not installed. Install with: sudo apt-get install -y uhubctl", file=sys.stderr)
+        return False
+    
+    action = "1" if state else "0"
+    state_str = "on" if state else "off"
+    
+    try:
+        result = subprocess.run(
+            ["sudo", "uhubctl", "-l", hub, "-p", port, "-a", action],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False
+        )
+        if result.returncode == 0:
+            print(f"USB port {port} on hub {hub} turned {state_str}")
+            return True
+        else:
+            print(f"Failed to turn {state_str} USB port: {result.stderr}", file=sys.stderr)
             return False
-        
-        # Small delay for visible effect
-        import time
-        time.sleep(0.1)
-        
-        result_on = subprocess.run(
-            ["sudo", "uhubctl", "-l", hub, "-p", port, "-a", "1"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            check=False
-        )
-        return result_on.returncode == 0
     except Exception as e:
-        print(f"uhubctl error: {e}", file=sys.stderr)
+        print(f"Error setting port power: {e}", file=sys.stderr)
         return False
 
 
-def toggle_serial(device: str, cmd_on: str = "FF", cmd_off: str = "00") -> bool:
-    """Toggle LED using serial communication."""
-    try:
-        import serial
-    except ImportError:
-        print("pyserial not installed. Install with: pip install pyserial", file=sys.stderr)
-        return False
+def toggle_usb_power(hub: str, port: str) -> bool:
+    """Toggle USB port power: if on, turn off; if off, turn on."""
+    current_state = get_usb_port_state(hub, port)
     
-    if not Path(device).exists():
-        print(f"Serial device not found: {device}", file=sys.stderr)
-        return False
-    
-    try:
-        ser = serial.Serial(device, 9600, timeout=1)
-        # Read current state if possible, or just toggle
-        # For simple toggle, send ON command then OFF
-        ser.write(bytes.fromhex(cmd_on))
-        ser.flush()
-        import time
-        time.sleep(0.1)
-        ser.write(bytes.fromhex(cmd_off))
-        ser.close()
-        return True
-    except Exception as e:
-        print(f"Serial error: {e}", file=sys.stderr)
-        return False
-
-
-def toggle_gpio(pin: int) -> bool:
-    """Toggle LED using GPIO."""
-    try:
-        import RPi.GPIO as GPIO
-    except ImportError:
-        print("RPi.GPIO not installed. Install with: pip install RPi.GPIO", file=sys.stderr)
-        return False
-    
-    try:
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setup(pin, GPIO.OUT)
-        
-        # Read current state and toggle
-        current = GPIO.input(pin)
-        GPIO.output(pin, not current)
-        GPIO.cleanup()
-        return True
-    except Exception as e:
-        print(f"GPIO error: {e}", file=sys.stderr)
+    if current_state is None:
+        # If we can't read state, use a state file to track it
+        state_file = Path("/tmp/usb_led_state.txt")
         try:
-            GPIO.cleanup()
-        except:
+            if state_file.exists():
+                saved_state = state_file.read_text().strip() == "on"
+                new_state = not saved_state
+            else:
+                # Default: assume port is on, so turn it off
+                new_state = False
+        except Exception:
+            # Fallback: just turn off (assuming it's on)
+            new_state = False
+        
+        success = set_usb_port_power(hub, port, new_state)
+        if success:
+            # Save state
+            try:
+                state_file.write_text("on" if new_state else "off")
+            except Exception:
+                pass
+        return success
+    
+    # Toggle: if on, turn off; if off, turn on
+    new_state = not current_state
+    success = set_usb_port_power(hub, port, new_state)
+    
+    # Save state for future reference
+    if success:
+        state_file = Path("/tmp/usb_led_state.txt")
+        try:
+            state_file.write_text("on" if new_state else "off")
+        except Exception:
             pass
-        return False
+    
+    return success
 
 
 def main():
-    """Main entry point - tries to toggle LED using configured method."""
-    method = os.environ.get("LED_METHOD", "auto").lower()
+    """Main entry point - toggle USB port power."""
+    hub = os.environ.get("HUB", "").strip()
+    port = os.environ.get("PORT", "").strip()
     
-    # Method 1: USB hub port control (uhubctl)
-    hub = os.environ.get("HUB", "")
-    port = os.environ.get("PORT", "")
+    if not hub or not port:
+        print("USB LED toggle requires HUB and PORT environment variables.", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("To find your USB hub and port:", file=sys.stderr)
+        print("  1. Run: sudo uhubctl", file=sys.stderr)
+        print("  2. Find your LED device and note the hub location (e.g., '1-1') and port number", file=sys.stderr)
+        print("  3. Set environment variables:", file=sys.stderr)
+        print("     export HUB='1-1'", file=sys.stderr)
+        print("     export PORT='2'", file=sys.stderr)
+        print("  4. Run this script again", file=sys.stderr)
+        return 1
     
-    if method in ("auto", "uhubctl"):
-        if hub and port:
-            if toggle_uhubctl(hub, port):
-                print("LED toggled via uhubctl")
-                return 0
-    
-    # Method 2: Serial USB device
-    serial_device = os.environ.get("SERIAL_DEVICE", "")
-    if method in ("auto", "serial"):
-        if serial_device:
-            cmd_on = os.environ.get("SERIAL_COMMAND_ON", "FF")
-            cmd_off = os.environ.get("SERIAL_COMMAND_OFF", "00")
-            if toggle_serial(serial_device, cmd_on, cmd_off):
-                print("LED toggled via serial")
-                return 0
-    
-    # Method 3: GPIO
-    gpio_pin = os.environ.get("GPIO_PIN", "")
-    if method in ("auto", "gpio"):
-        if gpio_pin:
-            try:
-                pin_num = int(gpio_pin)
-                if toggle_gpio(pin_num):
-                    print("LED toggled via GPIO")
-                    return 0
-            except ValueError:
-                pass
-    
-    # Fallback: No-op with informative message
-    print("LED toggle requested, but no configuration found.")
-    print("Configure via environment variables:")
-    print("  - uhubctl: HUB=1-1 PORT=2")
-    print("  - serial: SERIAL_DEVICE=/dev/ttyUSB0")
-    print("  - GPIO: GPIO_PIN=18")
-    print("Set LED_METHOD=uhubctl|serial|gpio to force a specific method.")
-    return 0  # Return success even if no-op, so UI doesn't show error
+    if toggle_usb_power(hub, port):
+        return 0
+    else:
+        return 1
 
 
 if __name__ == "__main__":

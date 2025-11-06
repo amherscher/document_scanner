@@ -5,6 +5,7 @@ import subprocess
 import time
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
+import sys
 
 
 APP_ROOT = Path(__file__).resolve().parent
@@ -95,17 +96,22 @@ def led_toggle():
         
         env = os.environ.copy()
         result = subprocess.run(
-            ["/usr/bin/python3", str(script)],
+            ["sudo", "/usr/bin/python3", str(script)],
             check=False,
             env=env,
             capture_output=True,
             text=True
         )
         
+        # Log output for debugging
+        output = result.stdout.strip() if result.stdout else ""
+        error = result.stderr.strip() if result.stderr else ""
+        
         if result.returncode == 0:
-            return jsonify({"ok": True})
+            return jsonify({"ok": True, "message": output or "LED toggled"})
         else:
-            error_msg = result.stderr.strip() if result.stderr else result.stdout.strip() or "Unknown error"
+            error_msg = error or output or "Unknown error"
+            print(f"LED toggle failed: {error_msg}", file=sys.stderr)
             return jsonify({"ok": False, "error": error_msg})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})

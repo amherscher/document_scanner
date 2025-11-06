@@ -34,18 +34,32 @@ def enable_usb() -> bool:
     # Method 2: Use uhubctl to enable Pi's internal USB hub
     if subprocess.run(["which", "uhubctl"], capture_output=True).returncode == 0:
         try:
-            # Try common Pi USB hub locations
-            for hub in ["1-1", "1-1.1"]:
-                for port in ["1", "2", "3", "4"]:
+            # List available hubs
+            list_result = subprocess.run(
+                ["sudo", "uhubctl"],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            if list_result.returncode == 0:
+                import re
+                hub_matches = re.findall(r'hub\s+(\d+(?:-\d+)?)', list_result.stdout)
+                hubs_to_try = list(set(hub_matches))
+            else:
+                hubs_to_try = ["1", "2", "3", "4", "1-1"]
+            
+            # Enable all ports on all hubs
+            for hub in hubs_to_try:
+                for port in ["1", "2", "3", "4", "5"]:
                     result = subprocess.run(
                         ["sudo", "uhubctl", "-l", hub, "-p", port, "-a", "1"],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
                         check=False
                     )
                     if result.returncode == 0:
-                        print(f"USB port {port} on hub {hub} enabled")
-                        return True
+                        print(f"USB port {port} on hub {hub} enabled", file=sys.stderr)
         except Exception as e:
             print(f"Error with uhubctl: {e}", file=sys.stderr)
     

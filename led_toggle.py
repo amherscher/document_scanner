@@ -13,7 +13,7 @@ This script disables USB power on the Pi.
 
 def disable_usb() -> bool:
     """Disable USB power on the Raspberry Pi."""
-    # Method 1: Use sysfs to suspend USB controller
+    # Method 1: Try sysfs (but this often doesn't work on Pi)
     usb_paths = [
         Path("/sys/bus/usb/devices/usb1/power/control"),
         Path("/sys/bus/usb/devices/usb2/power/control"),
@@ -22,28 +22,35 @@ def disable_usb() -> bool:
     for path in usb_paths:
         if path.exists():
             try:
-                # Try writing directly first
-                path.write_text("suspend")
-                # Verify it worked
-                if path.read_text().strip() in ["suspend", "auto"]:
-                    print(f"USB disabled via {path}")
-                    return True
-            except PermissionError:
-                # Try via echo through subprocess
-                try:
-                    result = subprocess.run(
-                        ["sh", "-c", f"echo suspend | sudo tee {path}"],
-                        capture_output=True,
-                        text=True,
-                        check=False
-                    )
-                    if result.returncode == 0:
-                        print(f"USB disabled via {path} (with sudo)")
-                        return True
-                except Exception:
-                    pass
+                # Check what values are accepted
+                current = path.read_text().strip()
+                # Try "off" instead of "suspend" if available
+                for value in ["off", "suspend"]:
+                    try:
+                        path.write_text(value)
+                        new_value = path.read_text().strip()
+                        if new_value == value:
+                            print(f"USB disabled via {path} (set to {value})")
+                            return True
+                    except (PermissionError, OSError):
+                        # Try via sudo
+                        try:
+                            result = subprocess.run(
+                                ["sh", "-c", f"echo {value} | sudo tee {path}"],
+                                capture_output=True,
+                                text=True,
+                                check=False
+                            )
+                            if result.returncode == 0:
+                                new_value = path.read_text().strip()
+                                if new_value == value:
+                                    print(f"USB disabled via {path} (set to {value} with sudo)")
+                                    return True
+                        except Exception:
+                            pass
             except Exception as e:
-                print(f"Error with {path}: {e}", file=sys.stderr)
+                # Invalid argument or other error - skip this method
+                pass
     
     # Method 2: Use uhubctl to disable Pi's internal USB hub
     if subprocess.run(["which", "uhubctl"], capture_output=True).returncode == 0:
@@ -57,9 +64,17 @@ def disable_usb() -> bool:
             )
             if list_result.returncode == 0:
                 print(f"Available USB hubs:\n{list_result.stdout}", file=sys.stderr)
+                # Parse hub numbers from output (e.g., "hub 4" or "hub 1-1")
+                import re
+                hub_matches = re.findall(r'hub\s+(\d+(?:-\d+)?)', list_result.stdout)
+                hubs_to_try = list(set(hub_matches))  # Remove duplicates
+                print(f"Found hubs: {hubs_to_try}", file=sys.stderr)
+            else:
+                # Fallback to common hub locations
+                hubs_to_try = ["4", "1-1", "1-1.1"]
             
-            # Try common Pi USB hub locations
-            for hub in ["1-1", "1-1.1", "1-1.2"]:
+            # Try each hub and all ports
+            for hub in hubs_to_try:
                 for port in ["1", "2", "3", "4", "5"]:
                     result = subprocess.run(
                         ["sudo", "uhubctl", "-l", hub, "-p", port, "-a", "0"],
@@ -71,7 +86,7 @@ def disable_usb() -> bool:
                     if result.returncode == 0:
                         print(f"USB port {port} on hub {hub} disabled")
                         return True
-                    elif result.stderr:
+                    elif result.stderr and "not found" not in result.stderr.lower():
                         print(f"uhubctl hub {hub} port {port}: {result.stderr.strip()}", file=sys.stderr)
         except Exception as e:
             print(f"Error with uhubctl: {e}", file=sys.stderr)

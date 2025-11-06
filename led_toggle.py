@@ -16,55 +16,8 @@ def disable_usb() -> bool:
     
     Since camera is CSI (not USB), we can safely remove USB modules.
     """
-    # Method 1: Remove USB kernel modules (most effective - turns off USB LED)
-    # This is safe since camera is CSI, not USB
-    print("Attempting to remove USB kernel modules...", file=sys.stderr)
-    
-    # Try removing xhci_hcd first (USB 3.0 controller - this controls the LED)
-    try:
-        result = subprocess.run(
-            ["sudo", "modprobe", "-r", "xhci_hcd"],
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        if result.returncode == 0:
-            print("USB disabled via xhci_hcd module removal (LED should be off now)")
-            return True
-        elif result.stderr:
-            error_msg = result.stderr.strip().lower()
-            if "in use" in error_msg or "is in use" in error_msg:
-                print("xhci_hcd is in use, trying force removal...", file=sys.stderr)
-                # Force remove (safe since camera is CSI, not USB)
-                result = subprocess.run(
-                    ["sudo", "modprobe", "-rf", "xhci_hcd"],
-                    capture_output=True,
-                    text=True,
-                    check=False
-                )
-                if result.returncode == 0:
-                    print("USB disabled via forced xhci_hcd removal (LED should be off)")
-                    return True
-                else:
-                    print(f"Force removal failed: {result.stderr.strip()}", file=sys.stderr)
-            else:
-                print(f"xhci_hcd removal error: {result.stderr.strip()}", file=sys.stderr)
-    except Exception as e:
-        print(f"Error removing xhci_hcd: {e}", file=sys.stderr)
-    
-    # Try other USB modules
-    try:
-        result = subprocess.run(
-            ["sudo", "modprobe", "-r", "ohci_hcd", "uhci_hcd"],
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        if result.returncode == 0:
-            print("USB disabled via OHCI/UHCI module removal")
-            return True
-    except Exception as e:
-        print(f"Error removing OHCI/UHCI: {e}", file=sys.stderr)
+    # Note: xhci_hcd is built into the kernel on this Pi, so we can't remove it
+    # Instead, we'll disable USB ports via uhubctl, which controls the LED
     
     # Method 2: Try sysfs (often doesn't work on Pi, but worth trying)
     usb_paths = [

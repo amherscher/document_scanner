@@ -45,28 +45,75 @@ def have(cmd: str) -> bool:
 
 
 def capture_image_csi(jpg: Path, resolution: str, rotate: str) -> bool:
-    """Capture image using CSI camera (libcamera-still or raspistill)."""
-    # Try libcamera-still first (modern Pi OS - Bookworm)
-    if have("libcamera-still"):
+    """Capture image using CSI camera (rpicam-still, libcamera-still, or raspistill)."""
+    # Try rpicam-still first (newer Bookworm)
+    if have("rpicam-still"):
         width, height = resolution.split("x")
         cmd = [
-            "libcamera-still",
-            "-o", str(jpg),  # Use -o instead of --output
+            "rpicam-still",
+            "-o", str(jpg),
             "--width", width,
             "--height", height,
-            "--timeout", "1000",  # 1 second timeout
+            "--timeout", "1000",
             "--nopreview",
         ]
         
         # Handle rotation
         if rotate != "0" and rotate != "auto":
-            # libcamera-still uses --rotation with degrees
+            # rpicam-still uses --rotation with degrees
+            cmd.extend(["--rotation", rotate])
+        
+        try:
+            print(f"Using rpicam-still for CSI camera...", file=sys.stderr)
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            if jpg.exists():
+                return True
+            else:
+                print(f"rpicam-still completed but file not created", file=sys.stderr)
+                if result.stderr:
+                    print(f"Error output: {result.stderr}", file=sys.stderr)
+        except subprocess.CalledProcessError as e:
+            print(f"rpicam-still failed with return code {e.returncode}", file=sys.stderr)
+            if e.stdout:
+                print(f"stdout: {e.stdout}", file=sys.stderr)
+            if e.stderr:
+                print(f"stderr: {e.stderr}", file=sys.stderr)
+        except Exception as e:
+            print(f"rpicam-still failed: {e}", file=sys.stderr)
+    
+    # Fallback to libcamera-still (older Bookworm)
+    if have("libcamera-still"):
+        width, height = resolution.split("x")
+        cmd = [
+            "libcamera-still",
+            "-o", str(jpg),
+            "--width", width,
+            "--height", height,
+            "--timeout", "1000",
+            "--nopreview",
+        ]
+        
+        # Handle rotation
+        if rotate != "0" and rotate != "auto":
             cmd.extend(["--rotation", rotate])
         
         try:
             print(f"Using libcamera-still for CSI camera...", file=sys.stderr)
-            run(cmd)
-            return True
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            if jpg.exists():
+                return True
+        except subprocess.CalledProcessError as e:
+            print(f"libcamera-still failed: {e.stderr if e.stderr else e}", file=sys.stderr)
         except Exception as e:
             print(f"libcamera-still failed: {e}", file=sys.stderr)
     
@@ -137,10 +184,15 @@ pdf = workdir / f"{args.basename}.pdf"
 print(f"Capturing image to {jpg}...", file=sys.stderr)
 captured = False
 
-# For CSI camera (Pi Camera), try libcamera-still first (Bookworm)
+# For CSI camera (Pi Camera), try rpicam-still first (Bookworm)
 if args.camera_type == "csi" or args.camera_type == "auto":
-    # Try CSI camera first (this is the Pi Camera)
-    captured = capture_image_csi(jpg, args.resolution, args.rotate)
+    # Check if camera tools are available
+    if have("rpicam-still") or have("libcamera-still") or have("raspistill"):
+        print("Attempting to use CSI camera...", file=sys.stderr)
+        # Try CSI camera first (this is the Pi Camera)
+        captured = capture_image_csi(jpg, args.resolution, args.rotate)
+    else:
+        print("No CSI camera tools found (rpicam-still, libcamera-still, or raspistill)", file=sys.stderr)
     
     if not captured and args.camera_type == "auto":
         # If CSI failed and auto mode, try USB as fallback
@@ -151,7 +203,7 @@ elif args.camera_type == "usb":
     captured = capture_image_usb(jpg, args.resolution, args.device)
 
 if not captured:
-    raise Exception("Failed to capture image. For CSI camera, ensure libcamera-still is installed: sudo apt-get install -y libcamera-apps")
+    raise Exception("Failed to capture image. For CSI camera, ensure rpicam-apps or libcamera-apps is installed: sudo apt-get install -y rpicam-apps")
 
 if not jpg.exists():
     raise Exception(f"Image file was not created: {jpg}")

@@ -77,19 +77,36 @@ def led_toggle():
     if not require_auth(request):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
     try:
-        # Pass environment variables to the LED toggle script
+        # Check current state to determine which script to run
+        state_file = Path("/tmp/usb_led_state.txt")
+        
+        current_state = "on"  # Default to on
+        if state_file.exists():
+            try:
+                current_state = state_file.read_text().strip()
+            except Exception:
+                pass
+        
+        # Toggle: if on, turn off; if off, turn on
+        if current_state == "on":
+            script = APP_ROOT / "led_toggle.py"  # Turn off
+        else:
+            script = APP_ROOT / "led_on.py"     # Turn on
+        
         env = os.environ.copy()
-        subprocess.run(
-            ["/usr/bin/python3", str(APP_ROOT / "led_toggle.py")],
-            check=True,
+        result = subprocess.run(
+            ["/usr/bin/python3", str(script)],
+            check=False,
             env=env,
             capture_output=True,
             text=True
         )
-        return jsonify({"ok": True})
-    except subprocess.CalledProcessError as e:
-        error_msg = e.stderr.strip() if e.stderr else str(e)
-        return jsonify({"ok": False, "error": error_msg})
+        
+        if result.returncode == 0:
+            return jsonify({"ok": True})
+        else:
+            error_msg = result.stderr.strip() if result.stderr else result.stdout.strip() or "Unknown error"
+            return jsonify({"ok": False, "error": error_msg})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 

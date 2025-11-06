@@ -5,15 +5,15 @@ from pathlib import Path
 
 
 """
-Turn OFF Raspberry Pi's USB subsystem to turn off the built-in USB LED.
+Turn ON Raspberry Pi's USB subsystem to turn on the built-in USB LED.
 
-This script disables USB power on the Pi.
+This script re-enables USB power on the Pi.
 """
 
 
-def disable_usb() -> bool:
-    """Disable USB power on the Raspberry Pi."""
-    # Method 1: Use sysfs to suspend USB controller
+def enable_usb() -> bool:
+    """Enable USB power on the Raspberry Pi."""
+    # Method 1: Use sysfs to enable USB controller
     usb_paths = [
         Path("/sys/bus/usb/devices/usb1/power/control"),
         Path("/sys/bus/usb/devices/usb2/power/control"),
@@ -22,8 +22,8 @@ def disable_usb() -> bool:
     for path in usb_paths:
         if path.exists():
             try:
-                path.write_text("suspend")
-                print(f"USB disabled via {path}")
+                path.write_text("auto")
+                print(f"USB enabled via {path}")
                 return True
             except PermissionError:
                 # Need root, try sudo approach
@@ -31,47 +31,47 @@ def disable_usb() -> bool:
             except Exception as e:
                 print(f"Error with {path}: {e}", file=sys.stderr)
     
-    # Method 2: Use uhubctl to disable Pi's internal USB hub
+    # Method 2: Use uhubctl to enable Pi's internal USB hub
     if subprocess.run(["which", "uhubctl"], capture_output=True).returncode == 0:
         try:
             # Try common Pi USB hub locations
             for hub in ["1-1", "1-1.1"]:
                 for port in ["1", "2", "3", "4"]:
                     result = subprocess.run(
-                        ["sudo", "uhubctl", "-l", hub, "-p", port, "-a", "0"],
+                        ["sudo", "uhubctl", "-l", hub, "-p", port, "-a", "1"],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                         check=False
                     )
                     if result.returncode == 0:
-                        print(f"USB port {port} on hub {hub} disabled")
+                        print(f"USB port {port} on hub {hub} enabled")
                         return True
         except Exception as e:
             print(f"Error with uhubctl: {e}", file=sys.stderr)
     
-    # Method 3: Unload USB modules (most aggressive)
+    # Method 3: Reload USB modules
     try:
         result = subprocess.run(
-            ["sudo", "modprobe", "-r", "xhci_hcd"],
+            ["sudo", "modprobe", "xhci_hcd"],
             capture_output=True,
             text=True,
             check=False
         )
         if result.returncode == 0:
-            print("USB disabled via xhci_hcd module removal")
+            print("USB enabled via xhci_hcd module loading")
             return True
     except Exception:
         pass
     
     try:
         result = subprocess.run(
-            ["sudo", "modprobe", "-r", "ohci_hcd", "uhci_hcd"],
+            ["sudo", "modprobe", "ohci_hcd", "uhci_hcd"],
             capture_output=True,
             text=True,
             check=False
         )
         if result.returncode == 0:
-            print("USB disabled via OHCI/UHCI module removal")
+            print("USB enabled via OHCI/UHCI module loading")
             return True
     except Exception:
         pass
@@ -80,18 +80,19 @@ def disable_usb() -> bool:
 
 
 def main():
-    """Turn off USB to turn off LED."""
-    if disable_usb():
+    """Turn on USB to turn on LED."""
+    if enable_usb():
         # Save state
         try:
-            Path("/tmp/usb_led_state.txt").write_text("off")
+            Path("/tmp/usb_led_state.txt").write_text("on")
         except Exception:
             pass
         return 0
     else:
-        print("Failed to disable USB. Try running with sudo.", file=sys.stderr)
+        print("Failed to enable USB. Try running with sudo.", file=sys.stderr)
         return 1
 
 
 if __name__ == "__main__":
     sys.exit(main())
+

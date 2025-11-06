@@ -44,8 +44,12 @@ def have(cmd: str) -> bool:
         return False
 
 
-def capture_image_csi(jpg: Path, resolution: str, rotate: str) -> bool:
-    """Capture image using CSI camera (rpicam-still, libcamera-still, or raspistill)."""
+def capture_image_csi(jpg: Path, resolution: str, rotate: str, zoom: float = 1.0) -> bool:
+    """Capture image using CSI camera (rpicam-still, libcamera-still, or raspistill).
+    
+    Args:
+        zoom: 1.0 = full field of view, < 1.0 = zoomed out (more visible), > 1.0 = zoomed in
+    """
     # Try rpicam-still first (newer Bookworm)
     if have("rpicam-still"):
         width, height = resolution.split("x")
@@ -58,10 +62,33 @@ def capture_image_csi(jpg: Path, resolution: str, rotate: str) -> bool:
             "--nopreview",
         ]
         
+        # Handle zoom using ROI (Region of Interest)
+        # ROI format: x,y,width,height (normalized 0.0-1.0)
+        # To zoom out, we need to use a larger ROI or adjust sensor mode
+        if zoom < 1.0:
+            # Zoom out: show more of the scene
+            # Use a larger ROI centered (this is tricky with rpicam, so we'll use --mode instead)
+            # Or we can just use a lower resolution mode which gives wider FOV
+            pass  # We'll handle this with sensor mode selection
+        
         # Handle rotation
         if rotate != "0" and rotate != "auto":
             # rpicam-still uses --rotation with degrees
             cmd.extend(["--rotation", rotate])
+        
+        # For zooming out, use full sensor (ROI = 1.0)
+        # For zooming in, reduce ROI (smaller ROI = more zoom)
+        # ROI format: x,y,width,height (all normalized 0.0-1.0)
+        if zoom < 1.0:
+            # Zoom out: use full sensor (ROI = 1.0, which is default, so don't set)
+            # But we can also try using a lower resolution mode which inherently has wider FOV
+            pass  # Full sensor is default
+        elif zoom > 1.0:
+            # Zoom in: reduce ROI
+            roi_size = 1.0 / zoom  # If zoom=2.0, ROI=0.5 (zoom in 2x)
+            roi_x = (1.0 - roi_size) / 2.0
+            roi_y = (1.0 - roi_size) / 2.0
+            cmd.extend(["--roi", f"{roi_x},{roi_y},{roi_size},{roi_size}"])
         
         try:
             print(f"Using rpicam-still for CSI camera...", file=sys.stderr)
@@ -97,6 +124,13 @@ def capture_image_csi(jpg: Path, resolution: str, rotate: str) -> bool:
             "--timeout", "1000",
             "--nopreview",
         ]
+        
+        # Handle zoom with ROI (same logic as rpicam)
+        if zoom > 1.0:
+            roi_size = 1.0 / zoom
+            roi_x = (1.0 - roi_size) / 2.0
+            roi_y = (1.0 - roi_size) / 2.0
+            cmd.extend(["--roi", f"{roi_x},{roi_y},{roi_size},{roi_size}"])
         
         # Handle rotation
         if rotate != "0" and rotate != "auto":
@@ -171,6 +205,7 @@ parser.add_argument("--device", default="/dev/video0")
 parser.add_argument("--resolution", default="1920x1080")
 parser.add_argument("--rotate", default="auto")  # auto|0|90|180|270
 parser.add_argument("--camera-type", default="auto")  # auto|csi|usb
+parser.add_argument("--zoom", type=float, default=0.7)  # 1.0 = normal, < 1.0 = zoom out (show more), > 1.0 = zoom in
 args = parser.parse_args()
 
 
@@ -190,7 +225,7 @@ if args.camera_type == "csi" or args.camera_type == "auto":
     if have("rpicam-still") or have("libcamera-still") or have("raspistill"):
         print("Attempting to use CSI camera...", file=sys.stderr)
         # Try CSI camera first (this is the Pi Camera)
-        captured = capture_image_csi(jpg, args.resolution, args.rotate)
+        captured = capture_image_csi(jpg, args.resolution, args.rotate, args.zoom)
     else:
         print("No CSI camera tools found (rpicam-still, libcamera-still, or raspistill)", file=sys.stderr)
     

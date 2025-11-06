@@ -57,18 +57,30 @@ def set_workdir():
 def scan():
     if not require_auth(request):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
+    
+    # Get zoom level from request (default 0.7 for zoomed out)
+    zoom = 0.7
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        zoom = float(data.get("zoom", 0.7))
+        # Clamp zoom between 0.3 and 2.0
+        zoom = max(0.3, min(2.0, zoom))
+    except (ValueError, TypeError):
+        pass  # Use default
+    
     ts = time.strftime("%Y%m%d_%H%M%S")
     base = f"scan_{ts}"
     # Call the capture pipeline script
     try:
         subprocess.run(
-        ["/usr/bin/python3", str(APP_ROOT / "scan_once.py"),
-        "--workdir", str(WORKDIR),
-            "--basename", base
+            ["/usr/bin/python3", str(APP_ROOT / "scan_once.py"),
+             "--workdir", str(WORKDIR),
+             "--basename", base,
+             "--zoom", str(zoom)
             ], check=True)
         return jsonify({"ok": True, "saved": [f"{base}.jpg", f"{base}.pdf"], "workdir": str(WORKDIR)})
     except subprocess.CalledProcessError as e:
-            return jsonify({"ok": False, "error": str(e)})
+        return jsonify({"ok": False, "error": str(e)})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 

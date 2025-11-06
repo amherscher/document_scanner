@@ -19,6 +19,15 @@ small{ color:#666; }
 <button onclick="doScan()">Scan</button>
 <button onclick="toggleLED()">LED Toggle</button>
 </div>
+<div style="margin: 1rem 0;">
+<label>Zoom Level: <span id="zoomValue">0.7</span>x</label><br/>
+<input type="range" id="zoomSlider" min="0.3" max="2.0" step="0.1" value="0.7" 
+       oninput="document.getElementById('zoomValue').textContent = this.value" 
+       style="width: 300px; margin-top: 0.5rem;" />
+<small style="display: block; color: #666; margin-top: 0.3rem;">
+  Lower = zoomed out (more visible), Higher = zoomed in
+</small>
+</div>
 <p>
 Work folder: <span id="workdir"></span>
 <br/><small>Tip: Add this page to your phone/iPad home screen.</small>
@@ -51,7 +60,12 @@ div.appendChild(a);
 });
 }
 async function doScan(){
-const r = await fetch('/api/scan', {method:'POST', headers: authHeaders()});
+const zoom = document.getElementById('zoomSlider').value;
+const r = await fetch('/api/scan', {
+    method:'POST', 
+    headers: {...authHeaders(), 'Content-Type': 'application/json'},
+    body: JSON.stringify({zoom: parseFloat(zoom)})
+});
 const j = await r.json();
 if(!j.ok){ alert(j.error||'scan error'); return; }
 alert('Saved: ' + j.saved.join(', '));

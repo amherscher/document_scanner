@@ -37,6 +37,7 @@ def enable_usb() -> bool:
             
             # Enable all ports on all hubs
             enabled_count = 0
+            failed_count = 0
             for hub in hubs_to_try:
                 for port in ["1", "2", "3", "4", "5"]:
                     result = subprocess.run(
@@ -49,10 +50,18 @@ def enable_usb() -> bool:
                     if result.returncode == 0:
                         enabled_count += 1
                         print(f"USB port {port} on hub {hub} enabled", file=sys.stderr)
+                    else:
+                        # Only log if it's not a "port not found" error
+                        if result.stderr and "port" not in result.stderr.lower() and "not found" not in result.stderr.lower():
+                            failed_count += 1
+                            print(f"Failed hub {hub} port {port}: {result.stderr.strip()}", file=sys.stderr)
             
+            print(f"Enabled {enabled_count} USB port(s), {failed_count} failed", file=sys.stderr)
             if enabled_count > 0:
                 print(f"Enabled {enabled_count} USB port(s) - LED should be on now")
                 return True
+            else:
+                print("No ports were enabled successfully", file=sys.stderr)
         except Exception as e:
             print(f"Error with uhubctl: {e}", file=sys.stderr)
     
@@ -87,15 +96,21 @@ def enable_usb() -> bool:
 
 def main():
     """Turn on USB to turn on LED."""
-    if enable_usb():
+    print("Attempting to enable USB ports...", file=sys.stderr)
+    success = enable_usb()
+    
+    if success:
         # Save state
         try:
             Path("/tmp/usb_led_state.txt").write_text("on")
-        except Exception:
-            pass
+            print("State saved: on", file=sys.stderr)
+        except Exception as e:
+            print(f"Failed to save state: {e}", file=sys.stderr)
+        print("USB enabled successfully", file=sys.stderr)
         return 0
     else:
-        print("Failed to enable USB. Try running with sudo.", file=sys.stderr)
+        print("CRITICAL: Failed to enable USB. All methods failed.", file=sys.stderr)
+        print("Try running: sudo python3 led_on.py", file=sys.stderr)
         return 1
 
 

@@ -107,12 +107,20 @@ def led_toggle():
         output = result.stdout.strip() if result.stdout else ""
         error = result.stderr.strip() if result.stderr else ""
         
+        # Print to console for debugging
+        print(f"LED toggle script: {script.name}", file=sys.stderr)
+        print(f"Return code: {result.returncode}", file=sys.stderr)
+        if output:
+            print(f"STDOUT: {output}", file=sys.stderr)
+        if error:
+            print(f"STDERR: {error}", file=sys.stderr)
+        
         if result.returncode == 0:
-            return jsonify({"ok": True, "message": output or "LED toggled"})
+            return jsonify({"ok": True, "message": output or "LED toggled", "stderr": error})
         else:
             error_msg = error or output or "Unknown error"
             print(f"LED toggle failed: {error_msg}", file=sys.stderr)
-            return jsonify({"ok": False, "error": error_msg})
+            return jsonify({"ok": False, "error": error_msg, "stdout": output, "stderr": error})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 

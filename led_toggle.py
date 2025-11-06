@@ -107,22 +107,26 @@ def disable_usb() -> bool:
     except Exception as e:
         print(f"Error removing OHCI/UHCI: {e}", file=sys.stderr)
     
+    print("All USB disable methods failed", file=sys.stderr)
     return False
 
 
 def main():
     """Turn off USB to turn off LED."""
     print("Attempting to disable USB...", file=sys.stderr)
-    if disable_usb():
+    success = disable_usb()
+    
+    if success:
         # Save state
         try:
             Path("/tmp/usb_led_state.txt").write_text("off")
-        except Exception:
-            pass
+            print("State saved: off", file=sys.stderr)
+        except Exception as e:
+            print(f"Failed to save state: {e}", file=sys.stderr)
         print("USB disabled successfully", file=sys.stderr)
         return 0
     else:
-        print("Failed to disable USB. All methods failed.", file=sys.stderr)
+        print("CRITICAL: Failed to disable USB. All methods failed.", file=sys.stderr)
         print("Tried: sysfs power control, uhubctl, and module removal", file=sys.stderr)
         return 1
 

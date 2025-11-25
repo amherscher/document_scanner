@@ -1,6 +1,50 @@
-/scans/
-.venv/
+# Python
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
 
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ML Pipeline
+checkpoints/*.pt
+checkpoints/*.pth
+*.pkl
+*.h5
+
+# Data
+*.csv
+!requirements.txt
+archive*/
+scans/
+*.jpg
+*.jpeg
+*.png
+*.pdf
+
+# Logs
+*.log
+*.out
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+test_dataset.csv

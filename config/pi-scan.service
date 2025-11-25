@@ -11,6 +11,14 @@ Environment="PI_SCAN_TOKEN=changeme"
 # Uncomment and set if you want auth required:
 # Environment="PI_SCAN_REQUIRE_AUTH=1"
 
+# Server Sync Configuration (for Pi -> Server file transfer)
+# Uncomment and configure to enable sync:
+# Environment="SYNC_ENABLED=true"
+# Environment="SYNC_SERVER_HOST=10.29.0.1"
+# Environment="SYNC_SERVER_USER=pi"
+# Environment="SYNC_SERVER_DIR=/opt/scanner/scans"
+# Environment="AUTO_SYNC=false"
+
 # LED Configuration - choose one method:
 # Option 1: USB Hub Port Control (uhubctl)
 # Environment="HUB=1-1"

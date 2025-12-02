@@ -1,0 +1,84 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ML Pipeline - Model files are too large for git
+checkpoints/
+checkpoints/**
+ml_pipeline/checkpoints/
+ml_pipeline/checkpoints/**
+*.pt
+*.pth
+*.pkl
+*.h5
+# Keep training history if it's small
+!checkpoints/training_history.json
+
+# Data
+*.csv
+!requirements.txt
+archive*/
+scans/
+*.jpg
+*.jpeg
+*.png
+*.pdf
+
+# Logs
+*.log
+*.out
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+test_dataset.csv
+
+# Presentation files (optional - uncomment if you don't want to share)
+# Pi_Scanner_Presentation.pptx
+# PRESENTATION_SCRIPT_4MIN.md
+
+# Environment and secrets
+.env
+.env.local
+*.key
+*.pem
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# System files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+
+# Presentation files
+Pi_Scanner_Presentation.pptx
+PRESENTATION_*.md
+PRESENTATION_SCRIPT_4MIN.md
+

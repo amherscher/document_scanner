@@ -1,0 +1,129 @@
+================================================================================
+                    PI SCANNER - SYSTEM ARCHITECTURE
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           USER INTERFACE                                    │
+│                         Web Browser / Mobile                                │
+│                    http://pi-scan.local:5000                                │
+└─────────────────────────────────────┬───────────────────────────────────────┘
+                                      │
+                                      │ HTTP/REST API
+                                      │
+        ┌─────────────────────────────┴─────────────────────────────┐
+        │                                                           │
+        ▼                                                           ▼
+┌─────────────────────────┐                          ┌─────────────────────────┐
+│   RASPBERRY PI          │                          │   SERVER                │
+│   (Scanner Device)      │                          │   (ML Processing)       │
+│   IP: 10.29.0.14        │                          │   IP: 10.29.0.1         │
+│                         │                          │                         │
+│  ┌────────────────────┐ │                          │  ┌────────────────────┐ │
+│  │  Flask Web App     │ │                          │  │  Flask Web App     │ │
+│  │  • Scan Endpoint   │ │                          │  │  • ML Classification │
+│  │  • LED Control     │ │                          │  │  • OCR Processing  │ │
+│  │  • File Sync       │ │                          │  │  • Receipt Parse   │ │
+│  └─────────┬──────────┘ │                          │  └─────────┬──────────┘ │
+│            │            │                          │            │            │
+│  ┌─────────▼──────────┐ │                          │  ┌─────────▼──────────┐ │
+│  │  Camera Hardware   │ │                          │  │  ML Pipeline       │ │
+│  │  • fswebcam        │ │                          │  │  • PyTorch Models  │ │
+│  │  • rpicam-still    │ │                          │  │  • BERT/Transform  │ │
+│  │  • libcamera-still │ │                          │  │  • Tesseract OCR   │ │
+│  │  • raspistill      │ │                          │  │  • Receipt Parser  │ │
+│  └────────────────────┘ │                          │  └────────────────────┘ │
+│                         │                          │                         │
+│  ┌────────────────────┐ │                          │                         │
+│  │  USB Hub Control   │ │                          │  ┌────────────────────┐ │
+│  │  • uhubctl         │ │                          │  │  Model Storage     │ │
+│  │  • LED Toggle      │ │                          │  │  • best_model.pt   │ │
+│  └────────────────────┘ │                          │  │  • 156MB, 90.5% acc│ │
+│                         │                          │  └────────────────────┘ │
+│  ┌────────────────────┐ │                          │                         │
+│  │  Local Storage     │ │                          │  ┌────────────────────┐ │
+│  │  • Scans (temp)    │ │                          │  │  Central Storage   │ │
+│  │  • expenses.csv    │ │                          │  │  • All scans       │ │
+│  └────────────────────┘ │                          │  │  • Master CSV      │ │
+│                         │                          │  └────────────────────┘ │
+└─────────────────────────┘                          └─────────────────────────┘
+        │                                                      ▲
+        │                                                      │
+        │              rsync (SSH)                             │
+        │              File Transfer                           │
+        └──────────────────────────────────────────────────────┘
+
+
+================================================================================
+                         DATA FLOW DIAGRAM
+================================================================================
+
+1. USER ACTION
+   │
+   ▼
+2. Web UI → POST /api/scan
+   │
+   ▼
+3. Pi: Camera Capture
+   │  • scan_once.py
+   │  • Generate JPG + PDF
+   │
+   ▼
+4. Save Locally
+   │  • WORKDIR/scans/scan_XXX.jpg
+   │  • WORKDIR/scans/scan_XXX.pdf
+   │  • (Default: /opt/scanner/scans on Pi)
+   │
+   ▼
+5. Sync to Server (optional)
+   │  • rsync via SSH
+   │  • Transfer files to server
+   │
+   ▼
+6. Server: Auto-Classify
+   │  • Extract text (OCR - Tesseract)
+   │  • Enhanced OCR with bounding boxes
+   │  • Classify category (PyTorch/BERT)
+   │  • Parse receipt data (vendor, date, amounts)
+   │
+   ▼
+7. Save to Expense Spreadsheet
+   │  • expenses.csv
+   │  • Category, Amount, Vendor, Date
+   │
+   ▼
+8. Display Results
+   │  • Category prediction
+   │  • Confidence score
+   │  • Receipt details
+
+
+================================================================================
+                         TECHNOLOGY STACK
+================================================================================
+
+Raspberry Pi:                    Server:
+─────────────────                ──────────────────
+• Flask (Python)                 • Flask (Python)
+• fswebcam/rpicam/libcamera      • PyTorch
+• raspistill (legacy)            • Transformers (BERT)
+• uhubctl (USB control)          • Tesseract OCR
+• rsync (SSH file transfer)      • pandas, numpy
+• systemd (service management)   • PIL/Pillow
+• Python 3                       • ImageMagick (post-process)
+• ImageMagick (image enhance)    • Python 3
+
+
+================================================================================
+                         KEY FEATURES
+================================================================================
+
+✓ Document Scanning (Camera-based capture, optimized for text)
+✓ ML Classification (Invoice categorization, 90.5% validation accuracy)
+✓ OCR Text Extraction (Tesseract with enhanced preprocessing)
+✓ Receipt Parsing (Vendor, Date, Amounts, Items with smart extraction)
+✓ Expense Tracking (Automatic CSV generation with summaries)
+✓ File Synchronization (Pi → Server via rsync/SSH)
+✓ Hardware Control (LED/USB power management via uhubctl)
+✓ Web Interface (Mobile-friendly UI with real-time feedback)
+✓ REST API (15+ endpoints for full system control)
+

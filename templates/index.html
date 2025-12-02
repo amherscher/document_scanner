@@ -1,0 +1,273 @@
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pi Scanner</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 2rem; }
+h2 { margin-top: 0; }
+h3 { margin-top: 1.5rem; margin-bottom: 0.5rem; }
+.row { display: flex; gap: 1rem; flex-wrap: wrap; }
+button { font-size: 1.3rem; padding: 1rem 1.2rem; border-radius: 12px; border: 1px solid #ccc; }
+button.loading { background-color: #e0e0e0; pointer-events: none; }
+button.success { background-color: #d8f5d0; }
+button.error { background-color: #ffd6d6; }
+button.small { font-size: 0.9rem; padding: 0.5rem 0.8rem; }
+#recent a { display:block; margin: .2rem 0; }
+input[type=text]{ font-size:1rem; padding:.5rem; width: 22rem; }
+.classification { background-color: #f0f8ff; border: 1px solid #4a90e2; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+.classification h4 { margin-top: 0; }
+.category-badge { display: inline-block; background-color: #4a90e2; color: white; padding: 0.5rem 1rem; border-radius: 6px; font-weight: bold; }
+.confidence { color: #666; font-size: 0.9rem; margin-left: 0.5rem; }
+.ml-status { background-color: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; padding: 0.75rem; margin: 1rem 0; }
+.ml-status.ready { background-color: #d8f5d0; }
+.file-item { display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0; }
+.file-item a { flex: 1; }
+</style>
+</head>
+<body>
+<h2>📄 Pi Scanner</h2>
+<div id="mlStatus" class="ml-status">Checking ML status...</div>
+<div id="expenseSummary" style="background-color: #f0f8ff; border: 1px solid #4a90e2; border-radius: 8px; padding: 1rem; margin: 1rem 0; display: none;">
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+      <strong>Expense Summary:</strong> <span id="expenseTotal">$0.00</span> from <span id="expenseCount">0</span> invoices
+      <button onclick="downloadExpenses()" class="small" style="margin-left: 1rem;">Download CSV</button>
+    </div>
+  </div>
+</div>
+<div class="row">
+<button onclick="doScan(this)">Scan</button>
+<button onclick="toggleLED(this)">LED Toggle</button>
+<button onclick="syncToServer(this)" id="syncBtn">Sync to Server</button>
+</div>
+<div id="lastClassification"></div>
+<div style="margin: 1rem 0;">
+<label>Zoom Level: <span id="zoomValue">0.3</span>x</label><br/>
+<input type="range" id="zoomSlider" min="0.2" max="2.0" step="0.1" value="0.3" 
+       oninput="document.getElementById('zoomValue').textContent = this.value" 
+       style="width: 300px; margin-top: 0.5rem;" />
+</div>
+<div style="margin: 1rem 0; padding: 1rem; background-color: #f9f9f9; border-radius: 8px;">
+<label for="workdir"><strong>Scan Save Directory:</strong></label>
+<div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+<input id="newdir" type="text" style="flex: 1; font-size: 1rem; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;" />
+<button id="setDirBtn" onclick="setDir(this)" class="small">Update</button>
+</div>
+<div style="margin-top: 0.5rem;"><small>Current: <span id="workdir" style="font-family: monospace;"></span></small></div>
+</div>
+<h3>Recent files</h3>
+<div id="recent"></div>
+
+<script>
+const TOKEN = "{{ token or '' }}";
+function authHeaders(){ const h = {}; if (TOKEN) h["X-Auth"] = TOKEN; return h; }
+function setLoading(btn, isLoading){ if(!btn) return; if(isLoading){ btn.classList.remove('success','error'); btn.classList.add('loading'); } else { btn.classList.remove('loading'); } }
+function flash(btn, kind){ if(!btn) return; btn.classList.remove('loading'); btn.classList.add(kind); setTimeout(()=>btn.classList.remove(kind), 1200); }
+async function refresh(){
+const r = await fetch('/api/status', {headers: authHeaders()});
+const j = await r.json();
+if(!j.ok) return;
+document.getElementById('workdir').textContent = j.workdir;
+const newdirEl = document.getElementById('newdir');
+if(newdirEl && (!newdirEl.value || newdirEl.value === j.workdir)) newdirEl.value = j.workdir;
+const div = document.getElementById('recent');
+div.innerHTML = '';
+j.recent.forEach(f=>{
+const fileItem = document.createElement('div');
+fileItem.className = 'file-item';
+const a = document.createElement('a');
+a.href = '/downloads/' + encodeURIComponent(f);
+a.textContent = f;
+fileItem.appendChild(a);
+if(f.match(/\.(jpg|jpeg|png|pdf)$/i)){
+  const btn = document.createElement('button');
+  btn.className = 'small';
+  btn.textContent = 'Classify';
+  btn.onclick = () => classifyFile(f, btn);
+  fileItem.appendChild(btn);
+}
+div.appendChild(fileItem);
+});
+}
+async function doScan(btn){
+setLoading(btn, true);
+const r = await fetch('/api/scan', {method:'POST', headers: {...authHeaders(), 'Content-Type': 'application/json'}, body: JSON.stringify({zoom: parseFloat(document.getElementById('zoomSlider').value), classify: true, auto_sync: true})});
+const j = await r.json();
+if(j.ok){ 
+  flash(btn,'success'); 
+  if(j.classification) showClassification(j.classification, j.saved[0]); 
+  if(j.synced && j.synced.length > 0){
+    alert('Saved and synced: ' + j.synced.join(', '));
+  } else {
+    alert('Saved: ' + j.saved.join(', '));
+  }
+  refresh(); 
+  checkSyncStatus();
+} else { flash(btn,'error'); }
+setLoading(btn, false);
+}
+async function toggleLED(btn){
+setLoading(btn, true);
+const r = await fetch('/api/led/toggle', {method:'POST', headers: authHeaders()});
+const j = await r.json();
+if(j.ok){
+  flash(btn, 'success');
+  btn.textContent = j.state === 'off' ? 'LED Toggle (OFF)' : 'LED Toggle (ON)';
+} else {
+  flash(btn, 'error');
+  let errorMsg = j.error || 'unknown error';
+  if(j.stderr) errorMsg += '\n\nDetails: ' + j.stderr;
+  if(j.stdout) errorMsg += '\nOutput: ' + j.stdout;
+  console.error('LED toggle error:', j);
+  alert('LED toggle failed:\n' + errorMsg);
+}
+setLoading(btn, false);
+}
+async function setDir(btn){
+setLoading(btn, true);
+const path = document.getElementById('newdir').value.trim();
+if(!path){ flash(btn,'error'); setLoading(btn, false); return; }
+const r = await fetch('/api/set_workdir', {method:'POST', headers: {'Content-Type': 'application/json', ...authHeaders()}, body: JSON.stringify({path})});
+const j = await r.json();
+if(j.ok){ flash(btn,'success'); document.getElementById('newdir').value = j.workdir; refresh(); } else { flash(btn,'error'); }
+setLoading(btn, false);
+}
+async function checkMLStatus(){
+const r = await fetch('/api/ml/status', {headers: authHeaders()});
+const j = await r.json();
+const statusDiv = document.getElementById('mlStatus');
+if(j.ok && j.ml_available && j.model_loaded){
+  statusDiv.className = 'ml-status ready';
+  statusDiv.textContent = `✓ ML Model Ready (${j.model_type || 'unknown'}) - ${j.categories?.length || 0} categories`;
+} else {
+  statusDiv.className = 'ml-status';
+  statusDiv.textContent = '⚠ ML Model not available';
+}
+}
+async function classifyFile(filename, btn){
+setLoading(btn, true);
+const r = await fetch('/api/classify', {method:'POST', headers: {...authHeaders(), 'Content-Type': 'application/json'}, body: JSON.stringify({filename})});
+const j = await r.json();
+if(j.ok){ flash(btn,'success'); showClassification(j, filename); } else { flash(btn,'error'); }
+setLoading(btn, false);
+}
+function showClassification(result, filename){
+const div = document.getElementById('lastClassification');
+const receipt = result.receipt_data || {};
+const amounts = receipt.amounts || {};
+let receiptInfo = '';
+if(receipt && !receipt.error){
+  receiptInfo = `<div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #ddd;">
+    ${receipt.vendor ? `<div><strong>Vendor:</strong> ${receipt.vendor}</div>` : ''}
+    ${receipt.date ? `<div><strong>Date:</strong> ${receipt.date}</div>` : ''}
+    ${receipt.invoice_number ? `<div><strong>Invoice #:</strong> ${receipt.invoice_number}</div>` : ''}
+    ${amounts.total ? `<div style="margin-top: 0.5rem;"><strong>Total: $${amounts.total.toFixed(2)}</strong></div>` : ''}
+    ${receipt.items && receipt.items.length > 0 ? `<div style="margin-top: 0.5rem;"><strong>Items (${receipt.items.length}):</strong><ul style="margin: 0.3rem 0; padding-left: 1.5rem;">${receipt.items.slice(0, 5).map(item => `<li>${item.description || 'Item'}: $${parseFloat(item.amount || 0).toFixed(2)}</li>`).join('')}${receipt.items.length > 5 ? `<li><em>... and ${receipt.items.length - 5} more</em></li>` : ''}</ul></div>` : ''}
+  </div>`;
+}
+div.innerHTML = `<div class="classification">
+  <h4>📋 Classification Result${filename ? ' - ' + filename : ''}</h4>
+  <div><span class="category-badge">${result.category}</span><span class="confidence">(${(result.confidence * 100).toFixed(1)}% confidence)</span></div>
+  ${result.top_predictions && result.top_predictions.length > 1 ? `<div style="margin-top: 0.75rem;"><small><strong>Top predictions:</strong></small><ul style="margin: 0.5rem 0; padding-left: 1.5rem;">${result.top_predictions.map(p => `<li>${p.category}: ${(p.confidence * 100).toFixed(1)}%</li>`).join('')}</ul></div>` : ''}
+  ${result.text_extracted ? `<small style="color: #666;">✓ Text extracted (${result.text_length} chars)</small>` : '<small style="color: #999;">⚠ No text extracted</small>'}
+  ${receiptInfo}
+</div>`;
+}
+async function syncToServer(btn){
+setLoading(btn, true);
+const r = await fetch('/api/sync', {method:'POST', headers: authHeaders()});
+const j = await r.json();
+if(j.ok){
+  if(j.synced > 0){
+    flash(btn,'success');
+    const msg = j.failed > 0 ? `Synced ${j.synced} file(s), ${j.failed} failed` : `Synced ${j.synced} file(s)`;
+    alert(msg);
+    if(j.failed_files && j.failed_files.length > 0){
+      console.error('Failed files:', j.failed_files);
+    }
+  } else if(j.failed > 0){
+    flash(btn,'error');
+    alert(`Sync failed: ${j.failed_files[0].error || 'unknown error'}`);
+  } else {
+    flash(btn,'success');
+    alert('No files to sync');
+  }
+  refresh();
+} else {
+  flash(btn,'error');
+  alert('Sync error: ' + (j.error || 'unknown'));
+}
+setLoading(btn, false);
+}
+async function checkSyncStatus(){
+const r = await fetch('/api/sync/status', {headers: authHeaders()});
+const j = await r.json();
+const btn = document.getElementById('syncBtn');
+if(j.ok){
+  if(j.sync_enabled){
+    if(j.files_ready > 0){
+      btn.textContent = `Sync to Server (${j.files_ready})`;
+      btn.style.display = 'inline-block';
+      btn.disabled = false;
+      let tooltip = `Sync to ${j.sync_target || j.server_host + ':' + j.server_dir}`;
+      if(!j.ssh_connected){
+        tooltip += ' - WARNING: SSH connection failed';
+        btn.style.opacity = '0.7';
+      } else if(!j.server_dir_exists){
+        tooltip += ' - WARNING: Server directory does not exist';
+        btn.style.opacity = '0.7';
+      } else {
+        btn.style.opacity = '1';
+      }
+      btn.title = tooltip;
+    } else {
+      btn.textContent = 'Sync to Server';
+      btn.style.display = 'inline-block';
+      btn.disabled = false;
+      btn.title = `No files to sync (${j.server_host}:${j.server_dir})`;
+      btn.style.opacity = '0.5';
+    }
+  } else {
+    btn.textContent = 'Sync to Server (disabled)';
+    btn.style.display = 'inline-block';
+    btn.disabled = true;
+    btn.title = 'Enable sync: Set SYNC_ENABLED=true environment variable';
+    btn.style.opacity = '0.5';
+  }
+} else {
+  btn.style.display = 'none';
+}
+}
+async function checkExpenseSummary(){
+const r = await fetch('/api/expenses/summary', {headers: authHeaders()});
+const j = await r.json();
+if(j.ok && j.total_expenses > 0){
+  document.getElementById('expenseSummary').style.display = 'block';
+  document.getElementById('expenseTotal').textContent = '$' + j.total_amount.toFixed(2);
+  document.getElementById('expenseCount').textContent = j.total_expenses;
+} else {
+  document.getElementById('expenseSummary').style.display = 'none';
+}
+}
+async function downloadExpenses(){
+const r = await fetch('/api/expenses/download', {headers: authHeaders()});
+if(r.ok){
+  const blob = await r.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'expenses.csv';
+  a.click();
+  window.URL.revokeObjectURL(url);
+} else {
+  alert('Failed to download expenses');
+}
+}
+refresh();
+checkMLStatus();
+checkSyncStatus();
+checkExpenseSummary();
+</script>
+</body>
+</html>

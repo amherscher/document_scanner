@@ -1,0 +1,46 @@
+[Unit]
+Description=Pi Scanner Web Service
+After=network.target
+
+[Service]
+Type=simple
+User=amherscher
+WorkingDirectory=/opt/scanner
+Environment="PYTHONUNBUFFERED=1"
+Environment="PI_SCAN_TOKEN=changeme"
+# Uncomment and set if you want auth required:
+# Environment="PI_SCAN_REQUIRE_AUTH=1"
+
+# Server Sync Configuration (for Pi -> Server file transfer)
+# Uncomment and configure to enable sync:
+# Environment="SYNC_ENABLED=true"
+# Environment="SYNC_SERVER_HOST=10.29.0.1"
+# Environment="SYNC_SERVER_USER=amherscher"
+# Environment="SYNC_SERVER_DIR=/home/data/Purdue/pi/scans"
+# Environment="AUTO_SYNC=false"
+
+# LED Configuration - choose one method:
+# Option 1: USB Hub Port Control (uhubctl)
+# Environment="HUB=1-1"
+# Environment="PORT=2"
+
+# Option 2: Serial USB Device
+# Environment="SERIAL_DEVICE=/dev/ttyUSB0"
+# Environment="SERIAL_COMMAND_ON=FF"
+# Environment="SERIAL_COMMAND_OFF=00"
+
+# Option 3: GPIO Control
+# Environment="GPIO_PIN=18"
+
+# Optional: Force a specific LED method
+# Environment="LED_METHOD=uhubctl"
+# Environment="LED_METHOD=serial"
+# Environment="LED_METHOD=gpio"
+
+ExecStart=/usr/bin/python3 /opt/scanner/app.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+
